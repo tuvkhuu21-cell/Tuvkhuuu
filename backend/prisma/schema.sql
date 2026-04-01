@@ -1,0 +1,2 @@
+-- Optional direct SQL bootstrap for MySQL (Prisma is primary migration source).
+-- Run Prisma migration first; this file documents target schema and indexes.
