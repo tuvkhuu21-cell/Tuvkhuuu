@@ -104,6 +104,14 @@ export const api = {
     const res = await client.get('/driver/me')
     return res.data
   },
+  async getAvailableOrders() {
+    const res = await client.get('/driver/available-orders')
+    return res.data
+  },
+  async acceptAvailableOrder(orderId) {
+    const res = await client.post(`/driver/available-orders/${orderId}/accept`)
+    return res.data
+  },
   async getDriverOrders() {
     const res = await client.get('/driver/assigned-orders')
     return res.data
@@ -138,6 +146,10 @@ export const api = {
   },
   async driverLocation(payload) {
     const res = await client.post('/driver/location', payload)
+    return res.data
+  },
+  async getAllActiveOrders() {
+    const res = await client.get('/driver/all-active-orders')
     return res.data
   },
   async dashboardSummary() {

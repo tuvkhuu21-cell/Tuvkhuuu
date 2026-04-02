@@ -29,6 +29,7 @@ import CustomerOrderHistorySection from './components/app/CustomerOrderHistorySe
 import ManagerAnalyticsSection from './components/app/ManagerAnalyticsSection'
 import { sectionReveal, staggerChildren, fadeUpItem } from './components/pages/animations'
 import { useAuth } from './context/AuthContext'
+import { getAccessToken } from './lib/api'
 
 function App() {
   const [activeView, setActiveView] = useState('landing')
@@ -71,8 +72,31 @@ function App() {
   }, [dashboardMode, allowedDashboardModes])
 
   useEffect(() => {
-    auth.loadMe().catch(() => {})
+    // Only load user data if not already loaded and we have a token
+    if (!auth.user && getAccessToken()) {
+      auth.loadMe().catch(() => {})
+    }
   }, [])
+
+  // Handle authentication-based routing
+  useEffect(() => {
+    if (auth.loading) return // Don't redirect while loading
+    
+    const hasToken = getAccessToken()
+    const isAuthenticated = auth.user && hasToken
+    
+    // If user is authenticated and on landing/auth, redirect to dashboard
+    if (isAuthenticated && (activeView === 'landing' || activeView === 'auth')) {
+      setActiveView('dashboard')
+      return
+    }
+    
+    // If user is not authenticated and not on landing/auth, redirect to landing
+    if (!isAuthenticated && !['landing', 'auth'].includes(activeView)) {
+      setActiveView('landing')
+      return
+    }
+  }, [auth.user, auth.loading, activeView])
 
   async function handleSignup(payload) {
     try {
@@ -135,7 +159,10 @@ function App() {
           <section className="mx-auto w-full max-w-5xl pt-4">
             <button
               type="button"
-              onClick={() => setActiveView('landing')}
+              onClick={async () => {
+                await auth.logout()
+                setActiveView('landing')
+              }}
               className="text-xs uppercase tracking-[0.12em] text-[#8aa7ff] hover:text-[#a8bcff]"
             >
               ← Back to home
@@ -244,18 +271,30 @@ function App() {
             </div>
 
             {dashboardMode === 'admin' ? (
-              <AdminDashboardSection umbrellaLogo={umbrellaLogo} onBack={() => setActiveView('landing')} />
+              <AdminDashboardSection umbrellaLogo={umbrellaLogo} onBack={async () => {
+                await auth.logout()
+                setActiveView('landing')
+              }} />
             ) : dashboardMode === 'company' ? (
-              <CompanyDashboardSection umbrellaLogo={umbrellaLogo} onBack={() => setActiveView('landing')} />
+              <CompanyDashboardSection umbrellaLogo={umbrellaLogo} onBack={async () => {
+                await auth.logout()
+                setActiveView('landing')
+              }} />
             ) : dashboardMode === 'user' ? (
               <UserDashboardSection
                 umbrellaLogo={umbrellaLogo}
-                onBack={() => setActiveView('landing')}
+                onBack={async () => {
+                  await auth.logout()
+                  setActiveView('landing')
+                }}
                 onPlaceOrder={() => setActiveView('order')}
                 onViewAllHistory={() => setActiveView('order-history')}
               />
             ) : (
-              <DriverDashboardSection onBack={() => setActiveView('landing')} />
+              <DriverDashboardSection onBack={async () => {
+                await auth.logout()
+                setActiveView('landing')
+              }} />
             )}
           </section>
         )}

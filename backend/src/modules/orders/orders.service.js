@@ -142,9 +142,10 @@ export async function createOrder(customerId, input) {
   })
 
   const canAutoAssign = !input.requirePaymentBeforeDispatch || ASSIGNABLE_PAYMENT_STATUS.has(paymentStatus)
-  if (canAutoAssign) {
-    await autoAssignOrder(order.id, customerId)
-  }
+  // Disable auto-assignment to keep orders unassigned for manual driver acceptance
+  // if (canAutoAssign) {
+  //   await autoAssignOrder(order.id, customerId)
+  // }
 
   const fullOrder = await prisma.order.findUnique({ where: { id: order.id }, include: { payments: true, driver: true } })
   publishOrderEvent(order.id, 'order:status', {
