@@ -25,6 +25,16 @@ export async function getOrderById(req, res) {
   res.json(data)
 }
 
+export async function getAvailableOrders(req, res) {
+  const data = await driverService.getAvailableOrders(req.user.id)
+  res.json(data)
+}
+
+export async function acceptAvailableOrder(req, res) {
+  const data = await driverService.acceptOrder(req.user.id, req.params.id)
+  res.json(data)
+}
+
 export async function acceptOrder(req, res) {
   const data = await driverService.acceptOrder(req.user.id, req.params.id)
   res.json(data)
@@ -47,5 +57,10 @@ export async function updateOrderStatus(req, res) {
 
 export async function updateLocation(req, res) {
   const data = await driverService.updateDriverLocation(req.user.id, req.body)
+  res.json(data)
+}
+
+export async function getAllActiveOrders(req, res) {
+  const data = await driverService.getAllActiveOrders()
   res.json(data)
 }

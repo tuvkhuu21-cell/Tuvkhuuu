@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react'
 import { api } from '../../lib/api'
+import AvailableOrdersSection from './AvailableOrdersSection'
 
 const driverStatuses = ['Picked Up', 'On The Way', 'Delivered']
 
 function DriverMobileSection({ onBack }) {
+  const [currentView, setCurrentView] = useState('active')
   const [orders, setOrders] = useState([])
   const [location, setLocation] = useState({ latitude: 47.9184, longitude: 106.9177 })
 
@@ -23,9 +25,23 @@ function DriverMobileSection({ onBack }) {
     await api.driverLocation({ ...location, orderId: activeOrder.id })
   }
 
+  if (currentView === 'available') {
+    return <AvailableOrdersSection onBack={() => setCurrentView('active')} />
+  }
+
   return (
     <section className="mx-auto w-full max-w-5xl space-y-4 pt-4">
-      <button type="button" onClick={onBack} className="text-xs uppercase tracking-[0.12em] text-[#8aa7ff] hover:text-[#a8bcff]">← Back</button>
+      <div className="flex items-center justify-between">
+        <button type="button" onClick={onBack} className="text-xs uppercase tracking-[0.12em] text-[#8aa7ff] hover:text-[#a8bcff]">← Back</button>
+        <button 
+          type="button" 
+          onClick={() => setCurrentView('available')}
+          className="rounded bg-[#8aa7ff]/20 px-3 py-1 text-xs text-[#8aa7ff] hover:bg-[#8aa7ff]/30 transition-colors"
+        >
+          View Available Orders
+        </button>
+      </div>
+      
       <article className="rounded-lg border border-white/10 bg-white/2 p-4">
         <h3 className="text-3xl font-semibold text-white">Driver Active Jobs</h3>
         {activeOrder ? (

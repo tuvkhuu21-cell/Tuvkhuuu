@@ -46,6 +46,15 @@ async function getDriverByUserId(userId) {
   return driver
 }
 
+async function getDriverActiveOrderCount(driverId) {
+  return prisma.order.count({
+    where: {
+      driverId,
+      status: { in: ['Assigned', 'PickedUp', 'OnTheWay'] }
+    }
+  })
+}
+
 async function findActiveOrder(driverId) {
   return prisma.order.findFirst({
     where: {
@@ -101,6 +110,31 @@ export async function getActiveOrder(userId) {
   return activeOrder ? serializeDriverOrder(activeOrder) : null
 }
 
+export async function getAvailableOrders(userId) {
+  const driver = await getDriverByUserId(userId)
+  
+  const activeOrderCount = await getDriverActiveOrderCount(driver.id)
+  if (activeOrderCount >= driver.maxDeliveries) {
+    return []
+  }
+
+  const orders = await prisma.order.findMany({
+    where: {
+      status: { in: ['Unassigned', 'Pending'] },
+      driverId: null,
+      paymentStatus: { in: ['Paid', 'CashOnDelivery'] }
+    },
+    include: {
+      customer: { select: { id: true, name: true, email: true } },
+      payments: { orderBy: { createdAt: 'desc' } },
+    },
+    orderBy: { createdAt: 'desc' },
+    take: 20
+  })
+
+  return orders.map(serializeDriverOrder)
+}
+
 export async function getCompletedOrders(userId) {
   const driver = await getDriverByUserId(userId)
   const orders = await prisma.order.findMany({
@@ -129,31 +163,30 @@ export async function getDriverOrderById(userId, orderId) {
   return serializeDriverOrder(order)
 }
 
-export async function acceptOrder(userId, orderId) {
+export async function acceptAvailableOrder(userId, orderId) {
   const driver = await getDriverByUserId(userId)
+  
+  const activeOrderCount = await getDriverActiveOrderCount(driver.id)
+  if (activeOrderCount >= driver.maxDeliveries) {
+    throw new AppError(`Cannot accept more than ${driver.maxDeliveries} deliveries at once`, 400)
+  }
 
   const order = await prisma.order.findUnique({ where: { id: orderId } })
-  if (!order || order.driverId !== driver.id) {
-    throw new AppError('Order not assigned to this driver', 403)
+  if (!order) {
+    throw new AppError('Order not found', 404)
   }
-  if (order.status !== 'Assigned') {
-    throw new AppError('Only assigned orders can be accepted', 400)
-  }
-  if (order.acceptedAt) {
-    return serializeDriverOrder(order)
-  }
-
-  const currentActiveOrder = await findActiveOrder(driver.id)
-  if (currentActiveOrder && currentActiveOrder.id !== order.id) {
-    throw new AppError('Complete the current active delivery before accepting a new one', 400)
+  if (order.status !== 'Pending' || order.driverId) {
+    throw new AppError('Order is no longer available', 400)
   }
 
   const updated = await prisma.$transaction(async (tx) => {
     const row = await tx.order.update({
       where: { id: order.id },
       data: {
+        driverId: driver.id,
+        status: 'Assigned',
+        assignedAt: new Date(),
         acceptedAt: new Date(),
-        rejectedAt: null,
       },
     })
 
@@ -163,7 +196,81 @@ export async function acceptOrder(userId, orderId) {
       orderId: order.id,
       actorUserId: userId,
       eventType: 'DRIVER_ACCEPTED',
-      payload: { driverId: driver.id },
+      payload: { driverId: driver.id, mode: 'manual' },
+    })
+
+    return row
+  })
+
+  publishOrderEvent(order.id, 'order:status', {
+    orderId: order.id,
+    status: 'Assigned',
+    paymentStatus: updated.paymentStatus,
+    timestamp: new Date().toISOString(),
+  })
+
+  return serializeDriverOrder(updated)
+}
+
+export async function acceptOrder(userId, orderId) {
+  const driver = await getDriverByUserId(userId)
+
+  const order = await prisma.order.findUnique({ where: { id: orderId } })
+  if (!order) {
+    throw new AppError('Order not found', 404)
+  }
+
+  // Handle both Assigned and Unassigned orders
+  const isUnassigned = order.status === 'Unassigned' || (order.status === 'Pending' && !order.driverId)
+  const isAssigned = order.driverId === driver.id
+
+  if (!isUnassigned && !isAssigned) {
+    throw new AppError('Order not available for this driver', 403)
+  }
+  
+  // For assigned orders, check status
+  if (isAssigned && order.status !== 'Assigned') {
+    throw new AppError('Only assigned orders can be accepted', 400)
+  }
+  
+  // For unassigned orders, check if they're still available
+  if (isUnassigned && order.driverId) {
+    throw new AppError('Order is no longer available', 400)
+  }
+  if (order.acceptedAt) {
+    return serializeDriverOrder(order)
+  }
+
+  const activeOrderCount = await getDriverActiveOrderCount(driver.id)
+  if (activeOrderCount >= driver.maxDeliveries) {
+    throw new AppError(`Cannot accept more than ${driver.maxDeliveries} deliveries at once`, 400)
+  }
+
+  const updated = await prisma.$transaction(async (tx) => {
+    const updateData = {
+      acceptedAt: new Date(),
+      rejectedAt: null,
+    }
+
+    // For unassigned orders, set driverId and assignedAt
+    if (isUnassigned) {
+      updateData.driverId = driver.id
+      updateData.assignedAt = new Date()
+      updateData.status = 'Assigned'
+    }
+
+    const row = await tx.order.update({
+      where: { id: order.id },
+      data: updateData,
+    })
+
+    await tx.driver.update({ where: { id: driver.id }, data: { isAvailable: false } })
+
+    await appendOrderEvent(tx, {
+      orderId: order.id,
+      actorUserId: userId,
+      eventType: 'DRIVER_ACCEPTED',
+      payload: { driverId: driver.id, mode: isUnassigned ? 'manual' : 'assigned' },
     })
 
     return row
@@ -361,4 +468,35 @@ export async function updateDriverLocation(userId, body) {
   }
 
   return { ok: true, shouldWriteHistory }
+}
+
+export async function getAllActiveOrders() {
+  const orders = await prisma.order.findMany({
+    where: {
+      OR: [
+        { status: 'Unassigned', driverId: null },
+        { status: { in: ['Assigned', 'PickedUp', 'OnTheWay'] }, driverId: { not: null } }
+      ]
+    },
+    include: {
+      driver: {
+        include: {
+          user: { select: { id: true, name: true, role: true } }
+        }
+      },
+      customer: { select: { id: true, name: true, email: true } },
+      payments: { orderBy: { createdAt: 'desc' } },
+    },
+    orderBy: { updatedAt: 'desc' },
+  })
+
+  return orders.map(order => ({
+    ...serializeDriverOrder(order),
+    driver: order.driver ? {
+      id: order.driver.id,
+      name: order.driver.user.name,
+      phone: order.driver.phone,
+      status: order.driver.isAvailable ? 'Online' : 'Offline'
+    } : null
+  }))
 }

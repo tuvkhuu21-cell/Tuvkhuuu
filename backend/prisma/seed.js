@@ -67,73 +67,161 @@ async function main() {
     },
   })
 
-  const order = await prisma.order.create({
+  // Create a pending assigned order (not yet accepted)
+  const pendingOrder = await prisma.order.create({
     data: {
       id: crypto.randomUUID(),
       customerId: customer.id,
       driverId: driver.id,
       senderName: 'Customer Demo',
       senderPhone: '+976-99112211',
-      pickupAddress: 'Sukhbaatar Square, Ulaanbaatar',
-      pickupContactName: 'Pickup Contact',
+      pickupAddress: 'Ulaanbaatar Airport',
+      pickupContactName: 'Airport Pickup',
       pickupContactPhone: '+976-99112212',
-      dropoffAddress: 'Misheel Expo, Ulaanbaatar',
-      receiverName: 'Receiver Demo',
+      dropoffAddress: 'Shangri-La Mall, Ulaanbaatar',
+      receiverName: 'Mall Customer',
       receiverPhone: '+976-99112213',
-      pickupLat: 47.9184,
-      pickupLng: 106.9177,
-      dropoffLat: 47.8997,
-      dropoffLng: 106.9107,
-      packageWeight: 12.5,
-      packageDescription: 'Documents and electronics',
-      notes: 'Handle with care',
-      deliveryFee: 25000,
+      pickupLat: 47.8411,
+      pickupLng: 106.7960,
+      dropoffLat: 47.9184,
+      dropoffLng: 106.9177,
+      packageWeight: 8.5,
+      packageDescription: 'Travel luggage and souvenirs',
+      notes: 'Fragile items inside',
+      deliveryFee: 35000,
       status: 'Assigned',
       paymentStatus: 'Paid',
       paymentMethod: 'Card',
-      estimatedMinutes: 40,
+      estimatedMinutes: 55,
       assignedAt: new Date(),
+      // No acceptedAt - this is a pending assignment
     },
   })
 
-  await prisma.payment.create({
+  // Create an active order (already accepted)
+  const activeOrder = await prisma.order.create({
     data: {
       id: crypto.randomUUID(),
-      orderId: order.id,
       customerId: customer.id,
-      provider: 'mock',
+      driverId: driver.id,
+      senderName: 'Business Customer',
+      senderPhone: '+976-88112233',
+      pickupAddress: 'Blue Sky Tower, Ulaanbaatar',
+      pickupContactName: 'Office Manager',
+      pickupContactPhone: '+976-88112234',
+      dropoffAddress: 'Central Tower, Ulaanbaatar',
+      receiverName: 'Client Office',
+      receiverPhone: '+976-88112235',
+      pickupLat: 47.9200,
+      pickupLng: 106.9200,
+      dropoffLat: 47.9100,
+      dropoffLng: 106.9150,
+      packageWeight: 5.2,
+      packageDescription: 'Business documents and samples',
+      notes: 'Urgent delivery',
+      deliveryFee: 20000,
+      status: 'PickedUp',
+      paymentStatus: 'Paid',
       paymentMethod: 'Card',
-      amount: 25000,
-      currency: 'MNT',
-      status: 'Paid',
-      transactionReference: 'seed-txn-1',
-      providerResponse: { seeded: true },
-      paidAt: new Date(),
+      estimatedMinutes: 25,
+      assignedAt: new Date(),
+      acceptedAt: new Date(), // This order has been accepted
+      pickedUpAt: new Date(), // Already picked up
     },
   })
 
-  await prisma.orderEvent.createMany({
+  // Create payments for both orders
+  await prisma.payment.createMany({
     data: [
       {
         id: crypto.randomUUID(),
-        orderId: order.id,
+        orderId: pendingOrder.id,
+        customerId: customer.id,
+        provider: 'mock',
+        paymentMethod: 'Card',
+        amount: 35000,
+        currency: 'MNT',
+        status: 'Paid',
+        transactionReference: 'seed-txn-pending',
+        providerResponse: { seeded: true },
+        paidAt: new Date(),
+      },
+      {
+        id: crypto.randomUUID(),
+        orderId: activeOrder.id,
+        customerId: customer.id,
+        provider: 'mock',
+        paymentMethod: 'Card',
+        amount: 20000,
+        currency: 'MNT',
+        status: 'Paid',
+        transactionReference: 'seed-txn-active',
+        providerResponse: { seeded: true },
+        paidAt: new Date(),
+      },
+    ],
+  })
+
+  // Create order events for both orders
+  await prisma.orderEvent.createMany({
+    data: [
+      // Pending order events
+      {
+        id: crypto.randomUUID(),
+        orderId: pendingOrder.id,
         eventType: 'ORDER_CREATED',
         payloadJson: { source: 'seed' },
         actorUserId: customer.id,
       },
       {
         id: crypto.randomUUID(),
-        orderId: order.id,
+        orderId: pendingOrder.id,
         eventType: 'DRIVER_ASSIGNED',
         payloadJson: { mode: 'seed' },
         actorUserId: manager.id,
       },
       {
         id: crypto.randomUUID(),
-        orderId: order.id,
+        orderId: pendingOrder.id,
         eventType: 'PAYMENT_PAID',
-        payloadJson: { reference: 'seed-txn-1' },
+        payloadJson: { reference: 'seed-txn-pending' },
         actorUserId: customer.id,
+      },
+      // Active order events
+      {
+        id: crypto.randomUUID(),
+        orderId: activeOrder.id,
+        eventType: 'ORDER_CREATED',
+        payloadJson: { source: 'seed' },
+        actorUserId: customer.id,
+      },
+      {
+        id: crypto.randomUUID(),
+        orderId: activeOrder.id,
+        eventType: 'DRIVER_ASSIGNED',
+        payloadJson: { mode: 'seed' },
+        actorUserId: manager.id,
+      },
+      {
+        id: crypto.randomUUID(),
+        orderId: activeOrder.id,
+        eventType: 'DRIVER_ACCEPTED',
+        payloadJson: { driverId: driver.id },
+        actorUserId: driverUser.id,
+      },
+      {
+        id: crypto.randomUUID(),
+        orderId: activeOrder.id,
+        eventType: 'PAYMENT_PAID',
+        payloadJson: { reference: 'seed-txn-active' },
+        actorUserId: customer.id,
+      },
+      {
+        id: crypto.randomUUID(),
+        orderId: activeOrder.id,
+        eventType: 'PICKED_UP',
+        payloadJson: { status: 'Picked Up the Item' },
+        actorUserId: driverUser.id,
       },
     ],
   })
