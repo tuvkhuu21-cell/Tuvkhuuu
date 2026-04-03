@@ -6,6 +6,11 @@ dotenv.config()
 const envSchema = z.object({
   PORT: z.coerce.number().default(4000),
   DATABASE_URL: z.string().min(1),
+  MYSQLHOST: z.string().optional(),
+  MYSQLPORT: z.coerce.number().optional(),
+  MYSQLUSER: z.string().optional(),
+  MYSQLPASSWORD: z.string().optional(),
+  MYSQLDATABASE: z.string().optional(),
   JWT_ACCESS_SECRET: z.string().min(16),
   JWT_REFRESH_SECRET: z.string().min(16),
   ACCESS_TOKEN_TTL: z.string().default('15m'),
